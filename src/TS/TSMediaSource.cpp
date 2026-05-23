@@ -240,6 +240,9 @@ void TSMediaSource::startSendRtp(const MediaSourceEvent::SendRtpArgs &args, cons
         strong_self->getOwnerPoller()->async([strong_self, ssrc, ex]() {
             WarnL << "stream:" << strong_self->getUrl() << " stop send raw ts rtp:" << ssrc << ", reason:" << ex;
             strong_self->_rtp_sender.erase(ssrc);
+            const auto &tuple = strong_self->getMediaTuple();
+            NOTICE_EMIT(BroadcastSendRtpStoppedArgs, Broadcast::kBroadcastSendRtpStopped,
+                        tuple.vhost, tuple.app, tuple.stream, ssrc, ex);
         });
     });
 

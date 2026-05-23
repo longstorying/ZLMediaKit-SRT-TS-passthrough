@@ -582,7 +582,9 @@ void MultiMediaSourceMuxer::startSendRtp(const MediaSourceEvent::SendRtpArgs &ar
             strong_self->getOwnerPoller(MediaSource::NullMediaSource())->async([=]() {
                 WarnL << "stream:" << strong_self->shortUrl() << " stop send rtp:" << ssrc << ", reason:" << ex;
                 strong_self->_rtp_sender.erase(ssrc);
-                NOTICE_EMIT(BroadcastSendRtpStoppedArgs, Broadcast::kBroadcastSendRtpStopped, *strong_self, ssrc, ex);
+                const auto &tuple = strong_self->getMediaTuple();
+                NOTICE_EMIT(BroadcastSendRtpStoppedArgs, Broadcast::kBroadcastSendRtpStopped,
+                            tuple.vhost, tuple.app, tuple.stream, ssrc, ex);
             });
         }
     });

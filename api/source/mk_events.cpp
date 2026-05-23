@@ -173,8 +173,8 @@ API_EXPORT void API_CALL mk_events_listen(const mk_events *events){
 
         NoticeCenter::Instance().addListener(&s_tag, Broadcast::kBroadcastSendRtpStopped,[](BroadcastSendRtpStoppedArgs){
             if (s_events.on_mk_media_send_rtp_stop) {
-                s_events.on_mk_media_send_rtp_stop(sender.getMediaTuple().vhost.c_str(), sender.getMediaTuple().app.c_str(),
-                                                   sender.getMediaTuple().stream.c_str(), ssrc.c_str(), ex.getErrCode(), ex.what());
+                s_events.on_mk_media_send_rtp_stop(vhost.c_str(), app.c_str(), stream.c_str(),
+                                                   ssrc.c_str(), ex.getErrCode(), ex.what());
             }
         });
 #ifdef ENABLE_WEBRTC

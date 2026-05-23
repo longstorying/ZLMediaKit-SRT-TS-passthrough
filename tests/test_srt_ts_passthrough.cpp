@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "Common/config.h"
 #include "Common/macros.h"
 #include "Network/Buffer.h"
 #include "Network/Socket.h"
@@ -28,6 +29,7 @@
 #include "Rtsp/Rtsp.h"
 #include "TS/TSMediaSource.h"
 #include "Util/mini.h"
+#include "Util/NoticeCenter.h"
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -166,6 +168,40 @@ void testSendRtpMulticastOptionsApplyToUdpSocket() {
     expect(readMulticastTtl(sock->rawFD()) == 32, "multicast_ttl should be applied to the udp socket");
     expect(readMulticastInterface(sock->rawFD()) == ntohl(inet_addr("127.0.0.1")), "multicast_if should be applied to the udp socket");
 #endif
+}
+
+void testSendRtpStoppedEventCarriesStreamIdentityWithoutMuxer() {
+    bool called = false;
+    string got_vhost;
+    string got_app;
+    string got_stream;
+    string got_ssrc;
+    int got_code = Err_success;
+    auto tag = reinterpret_cast<void *>(&called);
+
+    NoticeCenter::Instance().addListener(tag, Broadcast::kBroadcastSendRtpStopped, [&](BroadcastSendRtpStoppedArgs) {
+        called = true;
+        got_vhost = vhost;
+        got_app = app;
+        got_stream = stream;
+        got_ssrc = ssrc;
+        got_code = ex.getErrCode();
+    });
+
+    string vhost = DEFAULT_VHOST;
+    string app = "test";
+    string stream = "srt_ts_stop_event";
+    string ssrc = "99887766";
+    SockException error(Err_shutdown, "unit test");
+    NOTICE_EMIT(BroadcastSendRtpStoppedArgs, Broadcast::kBroadcastSendRtpStopped, vhost, app, stream, ssrc, error);
+    NoticeCenter::Instance().delListener(tag, Broadcast::kBroadcastSendRtpStopped);
+
+    expect(called, "send rtp stopped event should be emitted");
+    expect(got_vhost == vhost, "send rtp stopped event should carry vhost without muxer dependency");
+    expect(got_app == app, "send rtp stopped event should carry app without muxer dependency");
+    expect(got_stream == stream, "send rtp stopped event should carry stream without muxer dependency");
+    expect(got_ssrc == ssrc, "send rtp stopped event should carry ssrc");
+    expect(got_code == Err_shutdown, "send rtp stopped event should carry close reason");
 }
 
 class TestableSrtPlayerImp : public SrtPlayerImp {
@@ -599,6 +635,7 @@ int main() {
         testSendRtpMulticastOptionsAreLoadedFromIni();
         testSendRtpMulticastOptionsRejectInvalidTtl();
         testSendRtpMulticastOptionsApplyToUdpSocket();
+        testSendRtpStoppedEventCarriesStreamIdentityWithoutMuxer();
         testTsMediaSourceSendsRawTsAsRtpMp2t();
         testTsMediaSourceSplitsOversizedTsBufferOnTsBoundary();
         testTsMediaSourceRejectsUnsupportedRtpOptions();
