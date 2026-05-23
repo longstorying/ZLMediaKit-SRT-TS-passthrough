@@ -12,11 +12,20 @@
 #include "SrtPlayerImp.h"
 #include "Common/config.h"
 #include "Http/HlsPlayer.h"
+#include "Rtsp/Rtsp.h"
+#include <algorithm>
 
 using namespace toolkit;
 using namespace std;
 
 namespace mediakit {
+
+static size_t getTsPassthroughPayloadMaxSize() {
+    GET_CONFIG(uint32_t, video_mtu, Rtp::kVideoMtuSize);
+    auto payload_size = video_mtu > RtpPacket::kRtpHeaderSize ? video_mtu - RtpPacket::kRtpHeaderSize : 0;
+    payload_size -= payload_size % TS_PACKET_SIZE;
+    return std::max<size_t>(payload_size, TS_PACKET_SIZE);
+}
 
 
 SrtPlayer::SrtPlayer(const EventPoller::Ptr &poller) 
@@ -139,6 +148,71 @@ size_t SrtPlayer::getRecvTotalBytes() {
 ///////////////////////////////////////////////////
 // SrtPlayerImp
 
+void SrtPlayerImp::setOnTsPacket(onTsPacket cb) {
+    _on_ts_packet = std::move(cb);
+    _ts_segment.reset();
+    _ts_payload_cache.clear();
+    if (!_on_ts_packet) {
+        _ts_segment.setOnSegment(nullptr);
+        return;
+    }
+    _ts_segment.setOnSegment([this](const char *data, size_t len) { onTsSegment(data, len); });
+}
+
+void SrtPlayerImp::onTsSegment(const char *data, size_t len) {
+    if (!_on_ts_packet || !data || !len) {
+        return;
+    }
+    auto max_payload_size = getTsPassthroughPayloadMaxSize();
+    if (_ts_payload_cache.size() + len > max_payload_size) {
+        flushTsPayloadCache();
+    }
+    _ts_payload_cache.append(data, len);
+    if (_ts_payload_cache.size() >= max_payload_size) {
+        flushTsPayloadCache();
+    }
+}
+
+void SrtPlayerImp::flushTsPayloadCache() {
+    if (!_on_ts_packet || _ts_payload_cache.empty()) {
+        return;
+    }
+    std::string payload;
+    payload.swap(_ts_payload_cache);
+    _on_ts_packet(std::make_shared<BufferString>(std::move(payload)));
+}
+
+bool SrtPlayerImp::inputTsPayloadForPassthrough(const char *data, size_t len) {
+    if (!_on_ts_packet) {
+        return false;
+    }
+    if (!len) {
+        return true;
+    }
+    if (!data) {
+        _ts_segment.reset();
+        _ts_payload_cache.clear();
+        WarnL << "drop null srt ts passthrough payload, len:" << len;
+        return true;
+    }
+    if (_ts_segment.remainDataSize() && static_cast<uint8_t>(_ts_segment.remainData()[0]) != TS_SYNC_BYTE) {
+        _ts_segment.reset();
+    }
+    if (!_ts_segment.remainDataSize() && len && static_cast<uint8_t>(data[0]) != TS_SYNC_BYTE) {
+        _ts_segment.reset();
+        return true;
+    }
+    try {
+        _ts_segment.input(data, len);
+        flushTsPayloadCache();
+    } catch (std::exception &ex) {
+        _ts_segment.reset();
+        _ts_payload_cache.clear();
+        WarnL << "srt ts passthrough parse failed: " << ex.what();
+    }
+    return true;
+}
+
 void SrtPlayerImp::onPlayResult(const toolkit::SockException &ex) {
     if (ex) {
         Super::onPlayResult(ex);
@@ -162,7 +236,10 @@ void SrtPlayerImp::onSRTData(SRT::DataPacket::Ptr pkt) {
         return;
     }
 
-    auto strong_self = shared_from_this();
+    if (inputTsPayloadForPassthrough(reinterpret_cast<const char *>(pkt->payloadData()), pkt->payloadSize())) {
+        return;
+    }
+
     if (!_demuxer) {
         auto demuxer = std::make_shared<HlsDemuxer>();
         demuxer->start(getPoller(), this);

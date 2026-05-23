@@ -13,6 +13,7 @@
 
 #include "Common/MultiMediaSourceMuxer.h"
 #include "Player/MediaPlayer.h"
+#include "TS/TSMediaSource.h"
 #include "Util/TimeTicker.h"
 #include <memory>
 
@@ -155,6 +156,9 @@ private:
     void rePlay(int iFailedCnt);
     void onPlaySuccess();
     void setDirectProxy();
+    void setSrtTsPassthrough();
+    void onSrtTsPacket(const toolkit::Buffer::Ptr &packet);
+    void onSrtTsProxyReady();
     void setTranslationInfo();
 
 private:
@@ -173,6 +177,9 @@ private:
     std::function<void(const toolkit::SockException &ex)> _on_play;
     TranslationInfo _transtalion_info;
     MultiMediaSourceMuxer::Ptr _muxer;
+    TSMediaSource::Ptr _srt_ts_src;
+    toolkit::Ticker _srt_ts_ticker;
+    bool _srt_ts_ready = false;
 
     toolkit::Ticker _live_ticker;
     // 0 表示正常 1 表示正在尝试拉流  [AUTO-TRANSLATED:2080bedf]

@@ -14,10 +14,14 @@
 #include "Common/MediaSource.h"
 #include "Common/PacketCache.h"
 #include "Util/RingBuffer.h"
+#include <tuple>
+#include <unordered_map>
 
 #define TS_GOP_SIZE 512
 
 namespace mediakit {
+
+class TSMediaSourceRtpSender;
 
 // TS直播数据包  [AUTO-TRANSLATED:02fb2e8e]
 // TS Live Data Packet
@@ -74,6 +78,11 @@ public:
     int readerCount() override {
         return _ring ? _ring->readerCount() : 0;
     }
+
+#if defined(ENABLE_RTPPROXY)
+    void startSendRtp(const MediaSourceEvent::SendRtpArgs &args, const std::function<void(uint16_t, const toolkit::SockException &)> cb);
+    bool stopSendRtp(const std::string &ssrc);
+#endif
 
     /**
      * 输入TS包
@@ -143,6 +152,9 @@ private:
     bool _have_video = false;
     int _ring_size;
     RingType::Ptr _ring;
+#if defined(ENABLE_RTPPROXY)
+    std::unordered_multimap<std::string, std::tuple<RingType::RingReader::Ptr, std::weak_ptr<TSMediaSourceRtpSender>>> _rtp_sender;
+#endif
 };
 
 

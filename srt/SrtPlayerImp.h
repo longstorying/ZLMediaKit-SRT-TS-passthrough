@@ -12,6 +12,9 @@
 #define ZLMEDIAKIT_SRtPLAYERIMP_H
 
 #include "SrtPlayer.h"
+#include "Rtp/TSDecoder.h"
+#include "TS/TSMediaSource.h"
+#include <functional>
 
 namespace mediakit {
 
@@ -21,13 +24,21 @@ class SrtPlayerImp
 public:
     using Ptr = std::shared_ptr<SrtPlayerImp>;
     using Super = PlayerImp<SrtPlayer, PlayerBase>;
+    using onTsPacket = std::function<void(const toolkit::Buffer::Ptr &)>;
 
     SrtPlayerImp(const toolkit::EventPoller::Ptr &poller) : Super(poller) {}
     ~SrtPlayerImp() override { DebugL; }
 
+    void setOnTsPacket(onTsPacket cb);
+
 private:
     //// SrtPlayer override////
     void onSRTData(SRT::DataPacket::Ptr pkt) override;
+    void onTsSegment(const char *data, size_t len);
+    void flushTsPayloadCache();
+
+protected:
+    bool inputTsPayloadForPassthrough(const char *data, size_t len);
 
     //// PlayerBase override////
     void onPlayResult(const toolkit::SockException &ex) override;
@@ -42,6 +53,9 @@ private:
     // for player
     DecoderImp::Ptr _decoder;
     MediaSinkInterface::Ptr _demuxer;
+    onTsPacket _on_ts_packet;
+    TSSegment _ts_segment;
+    std::string _ts_payload_cache;
 
     // for pusher
     TSMediaSource::RingType::RingReader::Ptr _ts_reader;

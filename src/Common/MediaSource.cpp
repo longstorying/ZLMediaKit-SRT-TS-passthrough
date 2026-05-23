@@ -16,6 +16,7 @@
 #include "Common/config.h"
 #include "Common/Parser.h"
 #include "Common/MultiMediaSourceMuxer.h"
+#include "TS/TSMediaSource.h"
 #include "Record/MP4Reader.h"
 #include "PacketCache.h"
 
@@ -289,6 +290,21 @@ bool MediaSource::isRecording(Recorder::type type){
 }
 
 void MediaSource::startSendRtp(const MediaSourceEvent::SendRtpArgs &args, const std::function<void(uint16_t, const toolkit::SockException &)> cb) {
+#if defined(ENABLE_RTPPROXY)
+    if (getSchema() == TS_SCHEMA) {
+        auto ts_src = std::dynamic_pointer_cast<TSMediaSource>(shared_from_this());
+        if (!ts_src) {
+            cb(0, SockException(Err_other, "invalid ts media source"));
+            return;
+        }
+        if (args.data_type != MediaSourceEvent::SendRtpArgs::kRtpTS) {
+            cb(0, SockException(Err_other, "ts media source only supports rtp ts output"));
+            return;
+        }
+        ts_src->startSendRtp(args, cb);
+        return;
+    }
+#endif
     auto listener = _listener.lock();
     if (!listener) {
         cb(0, SockException(Err_other, "尚未设置事件监听器"));
@@ -298,6 +314,12 @@ void MediaSource::startSendRtp(const MediaSourceEvent::SendRtpArgs &args, const 
 }
 
 bool MediaSource::stopSendRtp(const string &ssrc) {
+#if defined(ENABLE_RTPPROXY)
+    if (getSchema() == TS_SCHEMA) {
+        auto ts_src = std::dynamic_pointer_cast<TSMediaSource>(shared_from_this());
+        return ts_src ? ts_src->stopSendRtp(ssrc) : false;
+    }
+#endif
     auto listener = _listener.lock();
     if (!listener) {
         return false;
