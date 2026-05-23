@@ -23,9 +23,19 @@
 #include "Network/Socket.h"
 #include "Player/PlayerBase.h"
 #include "Poller/EventPoller.h"
+#include "Rtp/RtpMulticastOptions.h"
 #include "Rtp/TSDecoder.h"
 #include "Rtsp/Rtsp.h"
 #include "TS/TSMediaSource.h"
+#include "Util/mini.h"
+
+#if defined(_WIN32)
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 #if defined(ENABLE_SRT) && defined(ENABLE_RTPPROXY)
 #include "srt/SrtPlayerImp.h"
@@ -70,6 +80,93 @@ uint32_t readBe32(const string &data, size_t offset) {
 }
 
 #if defined(ENABLE_SRT) && defined(ENABLE_RTPPROXY)
+
+sockaddr_storage makeUdpAddress(const char *host, uint16_t port) {
+    sockaddr_storage addr;
+    expect(SockUtil::getDomainIP(host, port, addr, AF_INET, SOCK_DGRAM, IPPROTO_UDP), "udp address should resolve");
+    return addr;
+}
+
+uint8_t readMulticastTtl(int fd) {
+#if defined(IP_MULTICAST_TTL)
+    uint8_t ttl = 0;
+#if defined(_WIN32)
+    int len = sizeof(ttl);
+#else
+    socklen_t len = sizeof(ttl);
+#endif
+    expect(getsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, reinterpret_cast<char *>(&ttl), &len) == 0, "read multicast ttl should succeed");
+    return ttl;
+#else
+    (void)fd;
+    return 0;
+#endif
+}
+
+uint32_t readMulticastInterface(int fd) {
+#if defined(IP_MULTICAST_IF)
+    in_addr addr {};
+#if defined(_WIN32)
+    int len = sizeof(addr);
+#else
+    socklen_t len = sizeof(addr);
+#endif
+    expect(getsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<char *>(&addr), &len) == 0, "read multicast interface should succeed");
+    return ntohl(addr.s_addr);
+#else
+    (void)fd;
+    return 0;
+#endif
+}
+
+void testSendRtpMulticastOptionsAreLoadedFromIni() {
+    mINI ini;
+    ini[kSendRtpOptionMulticastIf] = "127.0.0.1";
+    ini[kSendRtpOptionMulticastTtl] = "32";
+
+    MediaSourceEvent::SendRtpArgs args;
+    loadSendRtpMulticastOptions(ini, args);
+
+    expect(args.multicast_if == "127.0.0.1", "multicast_if should be loaded from ini options");
+    expect(args.multicast_ttl == 32, "multicast_ttl should be loaded from ini options");
+}
+
+void testSendRtpMulticastOptionsRejectInvalidTtl() {
+    auto poller = EventPollerPool::Instance().getPoller();
+    auto sock = Socket::createSocket(poller, false);
+    expect(sock->bindUdpSock(0, "0.0.0.0", true), "udp socket should bind before applying multicast options");
+
+    MediaSourceEvent::SendRtpArgs args;
+    args.multicast_ttl = 300;
+    auto addr = makeUdpAddress("239.255.0.1", 5004);
+
+    bool threw = false;
+    try {
+        applySendRtpMulticastOptions(sock->rawFD(), addr, args);
+    } catch (const exception &) {
+        threw = true;
+    }
+
+    expect(threw, "multicast_ttl above 255 should be rejected before sending");
+}
+
+void testSendRtpMulticastOptionsApplyToUdpSocket() {
+#if defined(IP_MULTICAST_TTL) && defined(IP_MULTICAST_IF)
+    auto poller = EventPollerPool::Instance().getPoller();
+    auto sock = Socket::createSocket(poller, false);
+    expect(sock->bindUdpSock(0, "0.0.0.0", true), "udp socket should bind before applying multicast ttl and interface");
+
+    MediaSourceEvent::SendRtpArgs args;
+    args.multicast_if = "127.0.0.1";
+    args.multicast_ttl = 32;
+    auto addr = makeUdpAddress("239.255.0.1", 5004);
+
+    applySendRtpMulticastOptions(sock->rawFD(), addr, args);
+
+    expect(readMulticastTtl(sock->rawFD()) == 32, "multicast_ttl should be applied to the udp socket");
+    expect(readMulticastInterface(sock->rawFD()) == ntohl(inet_addr("127.0.0.1")), "multicast_if should be applied to the udp socket");
+#endif
+}
 
 class TestableSrtPlayerImp : public SrtPlayerImp {
 public:
@@ -499,6 +596,9 @@ int main() {
         testSrtCallbackResetClearsPartialTsPacket();
         testSrtInvalidPayloadIsDroppedAndNextTsPacketStillWorks();
         testPlayerFactoryKeepsPassthroughScopedToSrt();
+        testSendRtpMulticastOptionsAreLoadedFromIni();
+        testSendRtpMulticastOptionsRejectInvalidTtl();
+        testSendRtpMulticastOptionsApplyToUdpSocket();
         testTsMediaSourceSendsRawTsAsRtpMp2t();
         testTsMediaSourceSplitsOversizedTsBufferOnTsBoundary();
         testTsMediaSourceRejectsUnsupportedRtpOptions();

@@ -15,6 +15,7 @@
 #include "Thread/WorkThreadPool.h"
 #include "Util/uv_errno.h"
 #include "RtpCache.h"
+#include "RtpMulticastOptions.h"
 #include "Rtcp/RtcpContext.h"
 
 using namespace std;
@@ -165,6 +166,7 @@ void RtpSender::startSend(const MediaSourceEvent &sender, const MediaSourceEvent
                         // Get a random port from the port pool
                         makeSockPair(pr, ifr_ip, true, true);
                     }
+                    applySendRtpMulticastOptions(strong_self->_socket_rtp->rawFD(), addr, args);
                 } catch (std::exception &ex) {
                     cb(0, SockException(Err_other, ex.what()));
                     return;

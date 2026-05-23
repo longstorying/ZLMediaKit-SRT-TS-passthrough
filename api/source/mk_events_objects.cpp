@@ -16,6 +16,7 @@
 #include "Http/HttpBody.h"
 
 #include "Http/HttpClient.h"
+#include "Rtp/RtpMulticastOptions.h"
 #include "Rtsp/RtspSession.h"
 
 #ifdef ENABLE_WEBRTC
@@ -355,6 +356,7 @@ API_EXPORT void API_CALL mk_media_source_start_send_rtp4(const mk_media_source c
     args.rtcp_timeout_ms = (*ini_ptr)["rtcp_timeout_ms"].empty() ? 30000 : (*ini_ptr)["rtcp_timeout_ms"].as<int>();
     args.rtcp_send_interval_ms = (*ini_ptr)["rtcp_send_interval_ms"].empty() ? 5000 : (*ini_ptr)["rtcp_send_interval_ms"].as<int>();
     args.enable_origin_recv_limit = (*ini_ptr)["enable_origin_recv_limit"].empty() ? false : (*ini_ptr)["enable_origin_recv_limit"].as<bool>();
+    loadSendRtpMulticastOptions(*ini_ptr, args);
     std::shared_ptr<void> ptr(
         user_data, user_data_free ? user_data_free : [](void *) {});
     src->getOwnerPoller()->async([=]() mutable {

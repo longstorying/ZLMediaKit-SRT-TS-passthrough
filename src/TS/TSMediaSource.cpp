@@ -13,6 +13,7 @@
 #include "TSMediaSource.h"
 #include "Common/config.h"
 #include "Network/sockutil.h"
+#include "Rtp/RtpMulticastOptions.h"
 #include "Rtp/TSDecoder.h"
 #include "Rtsp/RtpCodec.h"
 #include "Rtsp/Rtsp.h"
@@ -76,6 +77,7 @@ public:
                         auto pr = make_pair(strong_self->_socket_rtp, Socket::createSocket(strong_self->_poller, false));
                         makeSockPair(pr, ifr_ip, true, true);
                     }
+                    applySendRtpMulticastOptions(strong_self->_socket_rtp->rawFD(), addr, args);
                 } catch (std::exception &ex) {
                     cb(0, SockException(Err_other, ex.what()));
                     return;

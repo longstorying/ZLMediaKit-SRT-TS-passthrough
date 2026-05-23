@@ -145,6 +145,11 @@ public:
         // Send target host address, can be ip or domain name
         std::string dst_url;
 
+        // 指定rtp组播发送网口ip，不设置时使用系统默认路由
+        std::string multicast_if;
+        // 指定rtp组播TTL，-1表示不设置socket选项
+        int multicast_ttl = -1;
+
         // udp发送时，是否开启rr rtcp接收超时判断  [AUTO-TRANSLATED:784982bd]
         // When sending udp, whether to enable rr rtcp receive timeout judgment
         bool udp_rtcp_timeout = false;
